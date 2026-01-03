@@ -33,7 +33,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ================= DATA =================
+# ================= DATA HANDLING =================
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {
@@ -57,7 +57,7 @@ async def on_ready():
     await bot.tree.sync()
     print(f"✅ Logged in as {bot.user}")
 
-# ================= CREATE TICKET =================
+# ================= CREATE TICKET VIEW =================
 class TicketCreateView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -72,42 +72,36 @@ class TicketCreateView(discord.ui.View):
         save_data()
 
         category = discord.utils.get(guild.categories, name="Tickets")
-        if not category:
+        if category is None:
             category = await guild.create_category("Tickets")
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True),
+            user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
             guild.me: discord.PermissionOverwrite(view_channel=True)
         }
 
         if data["support_role"]:
             role = guild.get_role(data["support_role"])
             if role:
-                overwrites[role] = discord.PermissionOverwrite(view_channel=True)
+                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
 
         channel = await guild.create_text_channel(
-            f"ticket-{ticket_number}",
+            name=f"ticket-{ticket_number}",
             category=category,
             overwrites=overwrites
         )
 
-        await channel.send(
-            content=user.mention,
-            embed=discord.Embed(
-                title=f"🎟 Ticket #{ticket_number}",
-                description="Please describe your issue.",
-                color=discord.Color.blue()
-            ),
-            view=TicketCloseView(user.id)
+        embed = discord.Embed(
+            title=f"🎟 Ticket #{ticket_number}",
+            description=f"{user.mention}, please describe your issue.",
+            color=discord.Color.blue()
         )
 
-        await interaction.response.send_message(
-            f"✅ Ticket created: {channel.mention}",
-            ephemeral=True
-        )
+        await channel.send(content=user.mention, embed=embed, view=TicketCloseView(user.id))
+        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
 
-# ================= CLOSE TICKET =================
+# ================= CLOSE VIEW =================
 class TicketCloseView(discord.ui.View):
     def __init__(self, owner_id):
         super().__init__(timeout=None)
@@ -116,15 +110,10 @@ class TicketCloseView(discord.ui.View):
     @discord.ui.button(label="Close Ticket", emoji="🔒", style=discord.ButtonStyle.red)
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         support_role_id = data.get("support_role")
-        has_support = support_role_id and discord.utils.get(
-            interaction.user.roles, id=support_role_id
-        )
+        has_support = support_role_id and discord.utils.get(interaction.user.roles, id=support_role_id)
 
         if interaction.user.id != self.owner_id and not has_support:
-            await interaction.response.send_message(
-                "❌ You don’t have permission.",
-                ephemeral=True
-            )
+            await interaction.response.send_message("❌ No permission.", ephemeral=True)
             return
 
         await interaction.response.send_message("🔒 Closing ticket...")
@@ -143,17 +132,14 @@ async def ticket_setup(interaction: discord.Interaction, channel: discord.TextCh
     data["panel_channel_id"] = channel.id
     data["panel_message_id"] = message.id
     save_data()
-    await interaction.response.send_message("✅ Ticket panel sent.", ephemeral=True)
+    await interaction.response.send_message("✅ Panel sent.", ephemeral=True)
 
 @bot.tree.command(name="ticket_role", description="Set support role")
 @app_commands.checks.has_permissions(administrator=True)
 async def ticket_role(interaction: discord.Interaction, role: discord.Role):
     data["support_role"] = role.id
     save_data()
-    await interaction.response.send_message(
-        f"✅ Support role set to {role.name}",
-        ephemeral=True
-    )
+    await interaction.response.send_message(f"✅ Role set to {role.name}", ephemeral=True)
 
 # ================= RUN =================
 bot.run(TOKEN)
